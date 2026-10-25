@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Share Live GPS</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Share your live GPS location</h1>
+    <p>Only continue if you understand that your location coordinates will be shared live with the person who created this session.</p>
+    <p class="notice">Your browser will ask for location permission. You can stop sharing at any time by pressing Stop Sharing or closing this page.</p>
+    <button id="start">Start Location Sharing</button>
+    <button id="stop" class="danger" disabled>Stop Sharing</button>
+    <p id="status" role="status">Location sharing is off.</p>
+    <p id="coords" class="small"></p>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const id = location.pathname.split("/").filter(Boolean).pop();
+    const key = new URLSearchParams(location.search).get("key");
+    const statusEl = document.getElementById("status");
+    const coordsEl = document.getElementById("coords");
+    let socket = null;
+    let watchId = null;
+
+    function stopSharing(notify = true) {
+      if (watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+      if (socket && notify && socket.connected) socket.emit("sharing-stopped");
+      document.getElementById("start").disabled = false;
+      document.getElementById("stop").disabled = true;
+      coordsEl.textContent = "";
+      statusEl.textContent = "Location sharing is off.";
+    }
+
+    document.getElementById("start").addEventListener("click", () => {
+      if (!key) { statusEl.textContent = "This sharing link is missing its key."; return; }
+      if (!navigator.geolocation) { statusEl.textContent = "This browser does not support GPS location."; return; }
+      if (!window.isSecureContext) { statusEl.textContent = "Please open this page using the secure HTTPS website link."; return; }
+      document.getElementById("start").disabled = true;
+      statusEl.textContent = "Connecting and requesting location permission...";
+      socket = io({ auth: { sessionId: id, role: "sharer", key } });
+      socket.on("connect", () => {
+        statusEl.textContent = "Please allow location permission when your browser asks.";
+        watchId = navigator.geolocation.watchPosition(position => {
+          const { latitude, longitude, accuracy } = position.coords;
+          socket.emit("location-update", { latitude, longitude, accuracy });
+          coordsEl.textContent = `Sharing location. Accuracy: about ${Math.round(accuracy)} metres.`;
+          statusEl.textContent = "Your location is being shared live. Tap Stop Sharing to end.";
+          document.getElementById("stop").disabled = false;
+        }, error => {
+          const messages = {
+            1: "Location permission was denied. Allow location permission to share.",
+            2: "Your device could not determine the location. Try outdoors or check GPS settings.",
+            3: "Location request timed out. Please try again."
+          };
+          statusEl.textContent = messages[error.code] || "Could not get location.";
+          document.getElementById("start").disabled = false;
+          document.getElementById("stop").disabled = true;
+        }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 });
+      });
+      socket.on("connect_error", error => {
+        statusEl.textContent = error.message || "Could not connect. Create a new session and try again.";
+        document.getElementById("start").disabled = false;
+      });
+    });
+
+    document.getElementById("stop").addEventListener("click", () => stopSharing(true));
+    window.addEventListener("pagehide", () => {
+      if (watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+      if (socket && socket.connected) socket.emit("sharing-stopped");
+    });
+  </script>
+</body>
+</html>
