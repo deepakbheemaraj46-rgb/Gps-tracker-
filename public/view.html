@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Private GPS Viewer</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Private GPS Viewer</h1>
+    <p id="status" role="status">Connecting...</p>
+    <section id="location" hidden>
+      <p><strong>Latitude:</strong> <span id="lat"></span></p>
+      <p><strong>Longitude:</strong> <span id="lon"></span></p>
+      <p><strong>Accuracy:</strong> <span id="accuracy"></span></p>
+      <p><strong>Last update:</strong> <span id="updated"></span></p>
+      <a id="map" class="button" target="_blank" rel="noopener">Open location on map</a>
+      <iframe id="mapFrame" title="Shared GPS location map" loading="lazy" referrerpolicy="no-referrer" class="map"></iframe>
+    </section>
+    <p class="small">Updates appear only while the other person has started location sharing and their browser continues sending GPS updates. Keep this private viewer link secret.</p>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const id = location.pathname.split("/").filter(Boolean).pop();
+    const key = new URLSearchParams(location.search).get("key");
+    const statusEl = document.getElementById("status");
+    const section = document.getElementById("location");
+
+    function render(state) {
+      if (!state.sharing || !state.location) {
+        section.hidden = true;
+        statusEl.textContent = "Location is not currently being shared.";
+        return;
+      }
+      const p = state.location;
+      document.getElementById("lat").textContent = p.latitude.toFixed(6);
+      document.getElementById("lon").textContent = p.longitude.toFixed(6);
+      document.getElementById("accuracy").textContent = p.accuracy == null ? "Not available" : `±${Math.round(p.accuracy)} metres`;
+      document.getElementById("updated").textContent = state.updatedAt ? new Date(state.updatedAt).toLocaleString() : "Just now";
+      const mapUrl = `https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`;
+      document.getElementById("map").href = mapUrl;
+      document.getElementById("mapFrame").src = `https://www.openstreetmap.org/export/embed.html?bbox=${p.longitude-0.01}%2C${p.latitude-0.01}%2C${p.longitude+0.01}%2C${p.latitude+0.01}&layer=mapnik&marker=${p.latitude}%2C${p.longitude}`;
+      section.hidden = false;
+      statusEl.textContent = "Live location is being shared.";
+    }
+
+    async function init() {
+      if (!key) { statusEl.textContent = "Private viewer key is missing."; return; }
+      try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
+        const state = await response.json();
+        if (!response.ok) throw new Error(state.error || "Could not load session.");
+        render(state);
+        const socket = io({ auth: { sessionId: id, role: "viewer", key } });
+        socket.on("location-state", render);
+        socket.on("connect_error", error => { statusEl.textContent = error.message || "Could not connect to live updates."; });
+      } catch (error) { statusEl.textContent = error.message; }
+    }
+    init();
+  </script>
+</body>
+</html>

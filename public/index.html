@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live GPS Sharing</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="card">
+    <h1>Live GPS Sharing</h1>
+    <p>Create a session to get two links: one to share with the person, and one private link to view their location.</p>
+    <p class="notice">Location is shared only after the person opens the sharing link, taps Start Location Sharing, and allows location permission.</p>
+    <button id="create">Create sharing links</button>
+    <section id="results" hidden>
+      <label for="shareUrl">Link to send to the person</label>
+      <div class="copyrow"><input id="shareUrl" readonly><button data-copy="shareUrl">Copy</button></div>
+      <a id="whatsapp" class="button" target="_blank" rel="noopener">Share via WhatsApp</a>
+      <label for="viewerUrl">Your private viewer link — keep it secret</label>
+      <div class="copyrow"><input id="viewerUrl" readonly><button data-copy="viewerUrl">Copy</button></div>
+      <a id="openViewer" class="button secondary" target="_blank" rel="noopener">Open viewer</a>
+      <p class="small">This demo keeps sessions in server memory. If the server restarts, the session links stop working and you must create a new session.</p>
+    </section>
+    <p id="status" role="status"></p>
+  </main>
+  <script>
+    const statusEl = document.getElementById("status");
+    document.getElementById("create").addEventListener("click", async () => {
+      statusEl.textContent = "Creating links...";
+      try {
+        const response = await fetch("/api/sessions", { method: "POST" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not create links.");
+        const origin = location.origin;
+        const share = new URL(data.shareUrl, origin).href;
+        const viewer = new URL(data.viewerUrl, origin).href;
+        document.getElementById("shareUrl").value = share;
+        document.getElementById("viewerUrl").value = viewer;
+        document.getElementById("whatsapp").href = "https://wa.me/?text=" + encodeURIComponent("Please open this link and choose whether to share your live GPS location: " + share);
+        document.getElementById("openViewer").href = viewer;
+        document.getElementById("results").hidden = false;
+        statusEl.textContent = "Links created.";
+      } catch (e) { statusEl.textContent = e.message; }
+    });
+    document.querySelectorAll("[data-copy]").forEach(button => button.addEventListener("click", async () => {
+      const input = document.getElementById(button.dataset.copy);
+      try { await navigator.clipboard.writeText(input.value); statusEl.textContent = "Copied."; }
+      catch { input.select(); document.execCommand("copy"); statusEl.textContent = "Copied."; }
+    }));
+  </script>
+</body>
+</html>
